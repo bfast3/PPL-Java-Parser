@@ -1,167 +1,104 @@
 import re
 
-def process_java_code(java_code):
-    # Save the original code
-    original_code = java_code.strip()
+# Token Class
+class Token:
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
 
-    # Corrected code will be built as a list of lines
-    corrected_lines = []
+    def __repr__(self):
+        return f"Token({self.type}, {self.value})"
 
-    # Split the code into lines for easier processing
-    lines = java_code.strip().split('\n')
+# Function to parse tokens from the input file
+def parse_tokens(input_file):
+    tokens = []
+    with open(input_file, 'r') as file:
+        for line in file:
+            # Match the pattern "Token(TYPE, value)"
+            match = re.match(r'Token\((\w+), (.*)\)', line.strip())
+            if match:
+                token_type = match.group(1)
+                value = match.group(2)
+                tokens.append(Token(token_type, value))
+    return tokens
 
-    # Patterns to match methods, decision structures, and loops
-    method_pattern = re.compile(r'^\s*(public|private|protected)?\s*(static\s+)?\s*\w+[\s<>\[\]]*\s+\w+\s*\(.*\)\s*{?')
-    decision_pattern = re.compile(r'^\s*(if|else if|else|switch)\b.*')
-    loop_pattern = re.compile(r'^\s*(for|while|do)\b.*')
+# Pass 1: Identify missing opening curly braces and insert them
+def pass_1_insert_opening_braces(tokens):
+    output_tokens = []
+    
+    for i, token in enumerate(tokens):
+        # Add current token to the output
+        output_tokens.append(token)
+        
+        # If the token is a construct that should have an opening curly brace
+        if token.type in {'METHOD', 'IF', 'ELSE_IF', 'ELSE', 'SWITCH', 'FOR', 'WHILE', 'DO'}:
+            # Look ahead to see if the next token is an opening curly brace
+            if i + 1 < len(tokens) and tokens[i + 1].type != 'LBRACE':
+                # If not, insert an LBRACE token
+                output_tokens.append(Token('LBRACE', '{'))
+    
+    return output_tokens
 
-    method_count = 0  # To count the number of methods
+# Pass 2: Identify missing closing curly braces and insert them before new constructs
+# Pass 2: Identify missing closing curly braces and insert them before new constructs
+def pass_2_insert_closing_braces(tokens):
+    output_tokens = []
+    stack = []  # Track constructs that expect closing braces
+    skip_class_brace = False  # Flag to skip class LBRACE
 
-    i = 0
-    brace_stack = []  # To keep track of braces
+    for i, token in enumerate(tokens):
+        # Add current token to the output
+        output_tokens.append(token)
 
-    while i < len(lines):
-        line = lines[i]
-        stripped_line = line.strip()
+        # Detect if this token is a class declaration and set the flag to skip its LBRACE
+        if token.type == 'STATEMENT' and 'class' in token.value:
+            skip_class_brace = True
 
-        # Check for method declarations
-        if method_pattern.match(stripped_line):
-            method_count += 1  # Increment method count
-
-            # Ensure method has opening curly brace
-            if '{' not in stripped_line:
-                # Add opening brace if missing
-                corrected_lines.append(line + ' {')
+        # Push opening curly brace onto the stack (unless it's the class LBRACE)
+        if token.type == 'LBRACE':
+            if not skip_class_brace:
+                stack.append(i)
             else:
-                corrected_lines.append(line)
-            i += 1
-            # Ensure method has closing brace
-            method_body = []
-            open_braces = 1 if '{' not in stripped_line else 0
-            while i < len(lines) and open_braces >= 0:
-                method_line = lines[i]
-                method_body.append(method_line)
-                if '{' in method_line:
-                    open_braces += method_line.count('{')
-                if '}' in method_line:
-                    open_braces -= method_line.count('}')
-                i += 1
-                if open_braces == 0:
-                    break
-            else:
-                # If method doesn't close properly, add closing brace
-                method_body.append('}')
-            corrected_lines.extend(method_body)
-            continue
+                skip_class_brace = False  # Reset the flag after skipping the class brace
 
-        # Check for decision structures
-        elif decision_pattern.match(stripped_line):
-            # Ensure decision structures use curly braces
-            corrected_lines.append(line)
-            if '{' not in stripped_line:
-                # Add opening brace
-                corrected_lines.append('{')
-                i += 1
-                # Copy following lines until we find the end of the block
-                while i < len(lines):
-                    next_line = lines[i]
-                    next_stripped = next_line.strip()
-                    corrected_lines.append(next_line)
-                    i += 1
-                    if ';' in next_line or next_stripped.startswith(('if', 'else', 'switch', 'for', 'while', 'do')):
-                        break
-                corrected_lines.append('}')
-            else:
-                i += 1
-            continue
+        # If we encounter a closing curly brace, pop the stack
+        elif token.type == 'RBRACE':
+            if stack:
+                stack.pop()
 
-        # Check for loops
-        elif loop_pattern.match(stripped_line):
-            corrected_lines.append(line)
-            if '{' not in stripped_line:
-                # Add opening brace
-                corrected_lines.append('{')
-                i += 1
-                # Copy following lines until we find the end of the block
-                while i < len(lines):
-                    next_line = lines[i]
-                    corrected_lines.append(next_line)
-                    i += 1
-                    if ';' in next_line or next_line.strip().startswith(('if', 'else', 'switch', 'for', 'while', 'do')):
-                        break
-                corrected_lines.append('}')
-            else:
-                i += 1
-            continue
+        # If we encounter a new construct, check if there are unclosed braces in the stack
+        elif token.type in {'METHOD', 'IF', 'ELSE_IF', 'ELSE', 'SWITCH', 'FOR', 'WHILE', 'DO'}:
+            if stack:
+                # Insert a closing brace before the new construct
+                output_tokens.insert(len(output_tokens) - 1, Token('RBRACE', '}'))
+                stack.pop()  # Pop the stack as we've "closed" the construct
 
-        else:
-            corrected_lines.append(line)
-            i += 1
+    # At the end of the file, if there are still unclosed braces in the stack, close them
+    while stack:
+        output_tokens.append(Token('RBRACE', '}'))
+        stack.pop()
 
-    corrected_code = '\n'.join(corrected_lines)
+    return output_tokens
 
-    return original_code, corrected_code, method_count
 
-# Example input Java program
-java_code = """
-public class Example {
-    public static void main(String[] args)
-        System.out.println("Hello, World!");
+# Main function to process the input file in two passes and generate the output
+def process_tokens(input_file, output_file):
+    # Parse tokens from the input file
+    tokens = parse_tokens(input_file)
+    
+    # Pass 1: Insert missing opening curly braces
+    tokens = pass_1_insert_opening_braces(tokens)
+    
+    # Pass 2: Insert missing closing curly braces
+    tokens = pass_2_insert_closing_braces(tokens)
+    
+    # Write the updated tokens to the output file
+    with open(output_file, 'w') as file:
+        for token in tokens:
+            file.write(f"{token}\n")
 
-    private int add(int a, int b)
-        return a + b;
-
-    protected void displayMessage()
-        System.out.println("This is a message.");
-
-    int subtract(int a, int b) {
-        return a - b;
-    }
-
-    do
-        System.out.println("Do something");
-    while (x < 5);
-
-    if (x > 0)
-        System.out.println("Positive");
-    else if (x < 0)
-        System.out.println("Negative");
-    else
-        System.out.println("Zero");
-
-    switch (x)
-        case 1:
-            System.out.println("One");
-            break;
-        case 2:
-            System.out.println("Two");
-            break;
-
-    for (int i = 0; i < 10; i++)
-        System.out.println(i);
-
-    while (x < 100)
-        x++;
-}
-"""
-
-# Process the Java code
-original_code, corrected_code, method_count = process_java_code(java_code)
-
-# Prepare the output content
-output_text = f"""Original Java Code:
-
-{original_code}
-
-Corrected Java Code:
-{corrected_code}
-
-Number of methods: {method_count}
-"""
-
-# Write the output to a text file
-with open('output.txt', 'w') as f:
-    f.write(output_text)
-
-# Print the output for verification
-print(output_text)
+# Example usage
+if __name__ == "__main__":
+    input_file = 'input_tokens.txt'  # Your input file with tokens
+    output_file = 'output_tokens.txt'  # The output file with missing braces identified
+    process_tokens(input_file, output_file)
