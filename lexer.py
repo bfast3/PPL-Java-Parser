@@ -141,9 +141,20 @@ if __name__ == "__main__":
     }
     """
 
-    lexer = Lexer(java_code)
+    code = ''
+    fileToRead = input('Please enter a java file to parse: ')
+    try:
+        with open(fileToRead, 'r') as f:
+            for line in f.readlines():
+                 code += f'{line}\n'  # Append each line to code with a newline
+    except IOError: 
+        print("Error: failed to read file")
+    
+    
+    lexer = Lexer(code)
     tokens = lexer.tokenize()
 
     with open('input_tokens.txt', 'w') as f:
         for token in tokens:
             f.write(f"{token}\n")
+    print('input_tokens.txt successfully created!')

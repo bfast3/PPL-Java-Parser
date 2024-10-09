@@ -24,57 +24,45 @@ def parse_tokens(input_file):
                 tokens.append(Token(token_type, value))
     return tokens
 
-# Function to correct method declaration errors
 def correct_method_declaration(method_declaration):
     # Default visibility modifier and return type
     default_visibility = "public"
     default_return_type = "void"
+    reserved_keywords = {'if', 'else', 'switch', 'for', 'while', 'do'}
 
     # Regex pattern to parse method declarations
     method_pattern = re.compile(r'''
         ^\s*
         (?P<visibility>public|private|protected)?\s*
         (?P<static>static\s+)?               # Optional 'static'
-        (?P<return_type>[\w<>\[\]]+)?\s+     # Return type (optional if missing)
+        (?P<return_type>(?!if|else|switch|for|while|do)[\w<>\[\]]+)\s+  # Exclude keywords
         (?P<method_name>\w+)\s*              # Method name
-        (\((?P<parameters>.*)\))?            # Parameters in parentheses (optional)
+        \((?P<parameters>.*)\)               # Parameters in parentheses
         ''', re.VERBOSE)
 
     match = method_pattern.match(method_declaration)
     if not match:
-        # If the method declaration doesn't match the pattern, return an error
-        return method_declaration  # Return as is if it cannot be parsed
+        # If the method declaration doesn't match the pattern, return as is
+        return method_declaration
 
+    method_name = match.group('method_name')
+
+    # Check if the method name is a reserved keyword
+    if method_name in reserved_keywords:
+        return method_declaration  # This is not a valid method, skip correction
+
+    # Continue with the existing correction logic
     visibility = match.group('visibility')
     static_part = match.group('static') or ''
     return_type = match.group('return_type')
-    method_name = match.group('method_name')
     parameters = match.group('parameters')
 
-    # Correct missing visibility modifier
     if not visibility:
         visibility = default_visibility
-
-    # Correct missing return type
     if not return_type:
         return_type = default_return_type
 
-    # Correct invalid visibility modifiers
-    valid_visibilities = {'public', 'private', 'protected'}
-    if visibility not in valid_visibilities:
-        visibility = default_visibility
-
-    # Correct invalid method names
-    if not re.match(r'^[a-zA-Z_]\w*$', method_name):
-        method_name = 'correctedMethodName'  # Provide a default valid method name
-
-    # Correct missing parentheses
-    if parameters is None:
-        parameters = ''
-
-    # Reconstruct the corrected method declaration
     corrected_method = f"{visibility} {static_part}{return_type} {method_name}({parameters})"
-
     return corrected_method
 
 # Main function to process tokens and correct method declarations
@@ -94,8 +82,44 @@ def process_tokens(input_file, output_file):
         for token in corrected_tokens:
             file.write(f"Token({token.type}, {token.value})\n")
 
+# A method to count and return the number of methods
+def count_methods(input_file):
+    tokens = parse_tokens(input_file)
+    count = 0
+    for token in tokens:
+        if token.type == 'METHOD' and not token.value.startswith("else if"): #the else if was being counted as a method and this change fixed it
+            count += 1
+    return count
+
+# Method to take all the information and generate the output file need 
+def generate_output_file(updated_file, output_file, original_file, count):
+
+    original_tokens = parse_tokens(original_file)
+    updated_tokens = parse_tokens(updated_file)
+    
+    with open(output_file, 'w') as of:
+        of.write("Original file (updated)\n") #removed the updated in final build
+
+        # can add some sort of formatting logic here 
+        for token in original_tokens:
+            of.write(f'{token.value}\n')
+
+        of.write('\n')
+        of.write("Corrected file: \n")
+        for token in updated_tokens:
+            of.write(f'{token.value}\n')
+        of.write('\n')
+        of.write(f'Method count: {count}')
+
 # Example usage
 if __name__ == "__main__":
     input_file = 'output_tokens.txt'   # Input file with tokens
     output_file = 'method_tokens.txt' # Output file with corrected tokens
     process_tokens(input_file, output_file)
+
+    original_file = 'input_tokens.txt'
+    output_file = 'output.txt'
+    updated_file = 'method_tokens.txt'
+    count = count_methods(updated_file)
+    generate_output_file(updated_file, output_file, original_file, count)
+    print("output.txt successfully created!")

@@ -102,3 +102,4 @@ if __name__ == "__main__":
     input_file = 'input_tokens.txt'  # Your input file with tokens
     output_file = 'output_tokens.txt'  # The output file with missing braces identified
     process_tokens(input_file, output_file)
+    print('output_tokens.txt successfully created!')
